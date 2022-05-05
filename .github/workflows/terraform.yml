@@ -1,0 +1,104 @@
+name: "Terraform"
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs: 
+  terraform: 
+    name: Terraform
+    strategy:
+        fail-fast: false
+        matrix:
+          workspace: 
+          - ${{ inputs.workspace1 }}
+          - ${{ inputs.workspace2 }}   
+    runs-on: ubuntu-latest
+    env:
+      TF_WORKSPACE: ${{ matrix.workspace }}
+    steps: 
+      - 
+        name: Checkout
+        uses: actions/checkout@v2
+      - 
+        id: fmt
+        name: "Terraform Format"
+        run: "terraform fmt -check"
+        continue-on-error: true
+      - 
+        id: init
+        name: "Terraform Init"
+        run: "terraform init"
+      - 
+        id: validate
+        name: "Terraform Validate"
+        run: "terraform validate -no-color"
+      -
+        id: plan
+#         if: "github.event_name == 'pull_request'"
+        name: "Terraform Show"
+        run: |
+          terraform plan -out=plan_out
+          echo "::set-output name=TFPLAN::$(terraform show -json plan_out)"  
+        env: 
+          AWS_ACCESS_KEY_ID: "${{ secrets.AWS_ACCESS_KEY_ID }}"
+          AWS_SECRET_ACCESS_KEY: "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+      -
+        id: out
+#         if: "github.event_name == 'pull_request'"
+        name: "Print Terraform Show"
+        run: echo "${{ steps.plan.outputs.TFPLAN }}"
+      
+      - 
+        name: "Notify slack channel"
+        uses: "8398a7/action-slack@v3"
+        with:
+          status: "${{ job.status }}"
+          job_name: "Terraform"
+          fields: "all" # selectable (default: repo,message)
+        env:
+         SLACK_WEBHOOK_URL: "${{ secrets.SLACK_WEBHOOK_URL }}" # required
+         MATRIX_CONTEXT: "${{ toJson(matrix) }}" # required
+        if: always()
+#       -
+#         name: Send custom JSON data to Slack workflow
+#         id: slack
+#         uses: slackapi/slack-github-action@v1.18.0
+#         with:
+#           # For posting a rich message using Block Kit
+#           payload: |
+#             {
+#               "text": "GitHub Action build result: ${{ job.status }}\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}\n${{ steps.plan.outputs.TFPLAN }}",
+#               "blocks": [
+#                 {
+#                   "type": "section",
+#                   "text": {
+#                     "type": "mrkdwn",
+#                     "text": "GitHub Action build result: ${{ job.status }}\n${{ github.event.pull_request.html_url || github.event.head_commit.url }}\n${{ steps.plan.outputs.TFPLAN }}"
+#                   }
+#                 }
+#               ]
+#             }
+#         env:
+#           SLACK_WEBHOOK_URL: "${{ secrets.SLACK_WEBHOOK_URL }}"
+#           SLACK_WEBHOOK_TYPE: "INCOMING_WEBHOOK"
+#      - 
+ #         id: script
+  #        name: "Terraform script"
+   #       run: "bash drift.sh ${{ secrets.SLACK_WEBHOOK_URL }}" 
+    #      env: 
+     #       AWS_ACCESS_KEY_ID: "${{ secrets.AWS_ACCESS_KEY_ID }}"
+      #      AWS_SECRET_ACCESS_KEY: "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+      - 
+        if: "steps.plan.outcome == 'failure'"
+        name: "Terraform Plan Status"
+        run: "exit 1"
+      #- 
+        #if: "github.ref == 'refs/heads/main' && github.event_name == 'push'"
+        #name: "Terraform Apply"
+        #run: "terraform apply -auto-approve"
+        #env: 
+          #AWS_ACCESS_KEY_ID: "${{ secrets.AWS_ACCESS_KEY_ID }}"
+          #AWS_SECRET_ACCESS_KEY: "${{ secrets.AWS_SECRET_ACCESS_KEY }}"
